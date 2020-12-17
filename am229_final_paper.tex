@@ -23,7 +23,7 @@
 
 \subsection{Problem formulation}
 
-Letting $x_1, \ldots x_n \in \R^n$ be the training examples, and $y_1, \ldots, y_n \in \{-1,1\}$ be the training labels, 
+Letting $x_1, \ldots x_N \in \R^p$ be the training examples, and $y_1, \ldots, y_N \in \{-1,1\}$ be the training labels, 
 the standard form of the binary support vector classifer (SVC) problem is given in   \cite{hastie2009elements} by
 
 \begin{equation} \label{first_form}
@@ -54,16 +54,16 @@ Indeed, this minimum is only defined when $\sum \xi_i$ is finite.
 
 \subsection{Motivation}
 
-This is for instance useful in problems where the number of training examples
-$N$ dominates the dimensionality of the data $p$, 
-While standard solvers for linear support vector classifers scale easily to millions of training examples \cite{fan2008liblinear}
-the standard \texttt{libSVM} solvers for nonlinear kernels struggles on problems of this 
+In many potiential applications of the SVC, there are millions of training samples, each of
+relatively low dimensionality - i.e. $N$ is much larger than $p$.
+While standard solvers for linear support vector classifers perform well in this situation 
+\cite{fan2008liblinear}.
+the standard \texttt{libSVM} solvers for nonlinear kernels struggle on problems of this 
 scale when the data is non-sparse \cite{chang2011libsvm}. \\
 
 The approach presented here uses the alternating descent method of multipliers to derive 
-a parallelizable algorithm for fitting support vector machines. While only the case for linear 
-kernels is shown here due to space constraints, extending this technique to non-linear kernels 
-is straightforward \cite{forero2010consensus}.
+a parallelizable algorithm for fitting support vector classifiers. While only the linear classifier is shown here 
+due to space constraints, extending this technique to non-linear kernels is straightforward \cite{forero2010consensus}.
 
 
 \subsection{Derivation of a parallel algorithm for SVC}
@@ -97,7 +97,7 @@ The problem is now in the desired ``loss + penalty'' form. The term $\sum_{i=1}^
 $\sum_{i=1}^n \beta_i^2$. \\
 Furthermore, both terms are convex in $\beta$ as $[1 - y_i (\beta^\top x_i + \beta_0)]_+$ is by definition the poitnwise maximum of two convex functions. \\
 
-Thus subsituting $z = \beta$ as usual, 
+Thus subsituting $z = \beta$ as before, 
 \begin{equation} 
 \begin{aligned}
 \argmin_{\beta, \beta_0} \quad 
@@ -105,26 +105,50 @@ Thus subsituting $z = \beta$ as usual,
 \textrm{subj. to} \quad & x_i - z_i = 0 \quad \forall i = 1, \ldots, N
 \end{aligned}
 \end{equation}
-this problem can be solved using the  global
-variable consensus ADMM algorithm described in INSERT REFERENCE:
+this problem can be solved using the scaled global
+variable consensus ADMM algorithm described section 2 \cite{boydistributed}:
 
 \begin{equation*}
 \begin{aligned}
-    (x_i)_{k+1} & \leftarrow \argmin_{x_i}
+    (\beta_i)_{k+1} & \leftarrow \argmin_{\beta_i} \left(\mathbf{1}^\top(\beta_i^\top x_i + \mathbf{1})_+ + (\rho/2) \|\beta_i - z_k + (u_i)_k \|_2^2 \right) \\
+    z_{k+1} & \leftarrow  \argmin_z \left( \frac{1}{2C} \|z\|_2^2 + \frac{N \rho}{2} \|z\|_2^2  - \overline{\beta}_{k+1} - \overline{u}_k\right) \\
+    (u_i)_{k+1} & \leftarrow (u_i)_k + (\beta_i)_k - z_{k+1}
 \end{aligned}
 \end{equation*}
+
+This can be simplified further by solving the $z$-update analytically. Rewrite the right-hand 
+side as 
+\[
+    h(z) = \frac{1}{2C} z^\top I z + (z - \overline{\beta}_{k+1} - \overline{u}_k)^\top I (z - \overline{\beta}_{k+1} - \overline{u}_k)
+\]
+Then, solve 
+\begin{align*}
+    0 &= \nabla_z h(z)  \\
+    0 &= z^\top \left(\frac{1}{c} + N\rho \right) + N\rho \left(- \overline{\beta}_{k+1} - \overline{u}_k \right) \\
+    z &= \frac{N \rho}{1/C + N\rho} \left( \overline{\beta}_{k+1} + \overline{u}_k \right)
+\end{align*}
+
+This yields the final form of the ADMM algorithm for this problem,
 
 \begin{equation*}
 \begin{aligned}
     (\beta_i)_{k+1} 
-    & \leftarrow \argmin_{\beta_i} (\mathbf{1}^\top(x_i\beta_i + \mathbf{1})_+ + (\rho/2) \|\beta_i - z_k + (u_i)_k \|_2^2) \\
+    & \leftarrow \argmin_{\beta_i} \left(\mathbf{1}^\top(\beta_i^\top x_i + \mathbf{1})_+ + (\rho/2) \|\beta_i - z_k + (u_i)_k \|_2^2 \right) \\
     z_{k+1} 
-    & \leftarrow \frac{\rho}{(1/\lambda) + N\rho} (\overline{\beta_{k+1}} + \overline{u_k}) \\
-    u_{k+1} 
+    & \leftarrow \frac{N\rho}{1/C + N\rho} (\overline{\beta}_{k+1} + \overline{u}_k) \\
+    (u_i)_{k+1} 
      & \leftarrow (u_i)_k + (\beta_i)_{k+1} - z_{k+1}
 \end{aligned}
 \end{equation*}
-As in the general case, the $x_i$-updates can be performed in parallel.
+
+
+As in the general case, the $u_i$- and $x_i$-updates can be performed in parallel.
+
+
+\textbf{NOTE:} Add something on how this fits many support vector machines
+
+Note that we split the updates over individual training examples, but we could with very slight 
+modification split over ``blocks'' of training example. 
 
 \bibliographystyle{ieeetr}
 \bibliography{am229_final_paper}

@@ -16,24 +16,95 @@
 
 \section{The ADMM Algorithm}
 
+\begin{equation} \label{admmform}
+\begin{aligned}
+    \min_{x, z} \quad & f(x) + g(z) \\
+    \textrm{subj. to } \quad & Ax + Bz = c
+\end{aligned}
+\end{equation}
+where $x \in \R^m, z \in \R^n, A \in R^{m \times p}, B \in \R^{n \times p}, c \in \R^p$
+
+\subsection*{}
+
 \section{Parallelizing ADMM}
+
+\subsection*{Global variable consensus ADMM}
+
+The motivation for using ADMM becomes clear when the objective of the minimization problem is 
+\textit{seperable}, i.e. when it is of the form 
+\[
+    \min \quad \sum_{i=1}^N f_i(x)  
+\]
+where each of the $f_i$ are convex. In this situation, one can derive a version of the ADMM 
+algorithm that can be distributed, which can yield a sizeable improvement in performance.
+
+
+\subsection*{Regularized Model Estimation}
+
+The ADMM form (\ref{admmform}) is particularly natural for regularized model estimation problems, 
+where the objective can be written as the sum of a ``loss'' and a ``penalty'' term, i.e.
+\[
+    \min_{\beta} \quad {l(\beta, X, y) + r(\beta)}
+\]
+where $X \in \R^{m \times p}$ is a matrix of training examples, $y \in \R^m$ is the vector of training
+labels, and $\beta$ is a vector of model parameters. If the loss function $l$ and regularization function 
+$r$ are respectively convex, the substitution $\beta = z$ immediately yields a problem in form (\ref{admmform})
+
+\begin{equation}
+\begin{aligned}
+    \min_{\beta, z} \quad & {l(\beta, X, y) + r(z)} \\
+    \textrm{subj. to} \quad & \beta - z = 0
+\end{aligned}
+\end{equation}
+
+When $l$ is seperable, this problem can be solved using the global consensus ADMM algorithm by splitting
+the problem over blocks of data \cite{boydistributed}, such that
+\[
+    X = \begin{bmatrix} X_1 \\ \vdots \\ X_N \end{bmatrix}, \quad
+    y = \begin{bmatrix} y_1, \\ \vdots \\ y_n\end{bmatrix}
+\]
+where $X_i \in \R^{m_i \times p}$, $y \in \R^{m_i}$, $\sum_{i=1}^n m_i = m$, and $l_i$ is 
+the loss functions on the $i^{th}$ block of data.
+The algorithm is then 
+
+\begin{algorithm}
+    \caption{Consensus global variable ADMM for regularizated model estimation}
+
+    \For{$k=1,2, \ldots$}{
+        $ \displaystyle
+            (\beta_i)_{k+1}  \leftarrow \argmin_{\beta_i} \left(
+                (l_i(\beta_i, X_i, y_i)+ (\rho/2) \|\beta_i - z_k + (u_i)_k \|_2^2 
+            \right) 
+        $
+        $ \displaystyle
+            z_{k+1}  \leftarrow  \argmin_z \left( 
+                r(z) + \frac{N \rho}{2} \|z\|_2^2  - \overline{\beta}_{k+1} - \overline{u}_k
+            \right) 
+        $
+        $ \displaystyle
+            (u_i)_{k+1}  \leftarrow (u_i)_k + (\beta_i)_k - z_{k+1}
+        $
+        }
+\end{algorithm}
+
+The next section demonstrates a worked out example of a straighforward application of this algorithm.
 
 \section{Support Vector Classifiers}
 
 
 \subsection{Problem formulation}
 
-Letting $x_1, \ldots x_N \in \R^p$ be the training examples, and $y_1, \ldots, y_N \in \{-1,1\}$ be the training labels, 
-the standard form of the binary support vector classifer (SVC) problem is given in   \cite{hastie2009elements} by
+Letting $x_1, \ldots x_m \in \R^p$ be the training examples, and $y_1, \ldots, y_N \in \{-1,1\}$ be the training labels, 
+the standard form of the binary \emph{support vector classifer} (SVC) problem is given in   \cite{hastie2009elements} by
 
 \begin{equation} \label{first_form}
 \begin{aligned}
     \argmin_{\beta, \beta_0, \xi}  \quad 
     & \|\beta\|^2_2 & \\
     \textrm{subj. to} \quad 
-    & y_i (x_i^\top \beta + \beta_0) \geq 1 - \xi & \forall i = 1, \ldots, N \\
-    & \xi_i \geq 0  & \forall i = 1, \ldots, N \\
-    & \sum_{i=1}^N \xi_i \leq C & C \textrm{ constant}
+    & y_i (x_i^\top \beta + \beta_0) \geq 1 - \xi & \forall i = 1, \ldots, m \\
+    & \xi_i \geq 0  & \forall i = 1, \ldots, m \\
+    & \sum_{i=1}^m \xi_i \leq C & C \textrm{ constant}
 \end{aligned}
 \end{equation}
 
@@ -42,79 +113,103 @@ Equivalently, we can formulate this as
 \begin{equation} \label{second_form}
 \begin{aligned}
     \argmin_{\beta, \beta_0, \xi} \quad 
-    & \frac{1}{2} \| \beta  \|_2^2 +  C \sum_{i=1}^N \xi_i & \\ 
+    & \frac{1}{2} \| \beta  \|_2^2 +  C \sum_{i=1}^m \xi_i & \\ 
     \textrm{subj. to}  \quad 
-    & y_i (x_i^\top \beta + \beta_0) \geq 1 - \xi_i & \forall i = 1, \ldots, N \\
-    & \xi_i \geq 0  & \forall i = 1, \ldots, N 
+    & y_i (x_i^\top \beta + \beta_0) \geq 1 - \xi_i & \forall i = 1, \ldots, m \\
+    & \xi_i \geq 0  & \forall i = 1, \ldots, m
 \end{aligned}
 \end{equation}
 
-Indeed, this minimum is only defined when $\sum \xi_i$ is finite. 
+Indeed, this minimum is defined iff $\sum \xi_i$ is finite. 
 
 
 \subsection{Motivation}
 
-In many potiential applications of the SVC, there are millions of training samples, each of
-relatively low dimensionality - i.e. $N$ is much larger than $p$.
+In many potential applications of the SVC, there are a large number of training samples (say, millions), 
+each of relatively modest dimensionality - i.e. $N$ is much larger than $p$.
 While standard solvers for linear support vector classifers perform well in this situation 
 \cite{fan2008liblinear}.
 the standard \texttt{libSVM} solvers for nonlinear kernels struggle on problems of this 
 scale when the data is non-sparse \cite{chang2011libsvm}. \\
 
 The approach presented here uses the alternating descent method of multipliers to derive 
-a parallelizable algorithm for fitting support vector classifiers. While only the linear classifier is shown here 
-due to space constraints, extending this technique to non-linear kernels is straightforward \cite{forero2010consensus}.
+a parallelizable algorithm for fitting support vector classifiers, which will be capable 
+of handling this type of large-scale problem.
+While only the linear classifier is shown here due to space constraints, 
+extending this technique to non-linear kernels is straightforward \cite{forero2010consensus}.
 
 
-\subsection{Derivation of a parallel algorithm for SVC}
+\subsection{Derivation of a distributed algorithm for SVC}
 
-We first rewrite the SVC formulation (\ref{second_form}) in a more convenient form to apply the ADMM algorithm.
+The first goal is to rewrite the SVC problem (\ref{second_form}) in a more convenient form to apply 
+the global consensus variable ADMM algorithm. Formulation (\ref{second_form}) is equivalent to \\
+
 \begin{equation*} 
 \begin{aligned}
-    \argmin_{\beta, \beta_0, \xi} \quad &   \frac{1}{2} \|\beta\|_2^2 + C\sum_{i=1}^N \xi_i\\
+    \argmin_{\beta, \beta_0, \xi} \quad &   \frac{1}{2} \|\beta\|_2^2 + C\sum_{i=1}^m \xi_i\\
     \textrm{subj. to } \quad & \xi_i =  [1 - y_i (\beta^\top x_i + \beta_0)]_+
 \end{aligned}
 \end{equation*}
+
 where  $[1 - y_i (\beta^\top x_i + \beta_0)]_+ = \max(0, 1 - y_i (\beta^\top x_i + \beta_0))$ . This is then equivalent to
+
 \begin{equation*} 
 \begin{aligned}
-        \argmin_{\beta, \beta_0, \xi} \quad & \frac{1}{2C} \|\beta\|_2^2 + \sum_{i=1}^N \xi_i\\
+        \argmin_{\beta, \beta_0, \xi} \quad & \frac{1}{2C} \|\beta\|_2^2 + \sum_{i=1}^m \xi_i\\
         \textrm{subj. to } \quad & \xi_i =  [1 - y_i (\beta^\top x_i + \beta_0)]_+
 \end{aligned}
 \end{equation*}
-Now, minimizing over $\xi$, this problem is now equivalent to
+
+Now, minimizing over $\xi$, this problem is equivalent to
 \begin{equation} \label{third_formulation}
 \begin{aligned}
         \argmin_{\beta, \beta_0} \quad 
-        &  \sum_{i=1}^n [1 - y_i (\beta^\top x_i + \beta_0)]_+ \frac{1}{2C} \|\beta\|_2^2 
+        &  \sum_{i=1}^m [1 - y_i (\beta^\top x_i + \beta_0)]_+ \frac{1}{2C} \|\beta\|_2^2 
 \end{aligned}
 \end{equation}
 Indeed, to minimize $\sum \xi_i$ it suffices to take the smallest $\xi_i$ allowed by the constraints,
-that is $[1 - y_i (\beta^\top x_i + \beta_0)]_+$. This corresponds to the penalization method
-formulation of the SVC given in \cite{hastie2009elements}. \\
+that is $[1 - y_i (\beta^\top x_i + \beta_0)]_+$. This corresponds to the \emph{penalization method
+formulation of the SVC} given in \cite{hastie2009elements}. \\
 
-The problem is now in the desired ``loss + penalty'' form. The term $\sum_{i=1}^n [1 - y_i (\beta^\top x_i + \beta_0)]_+$  is seperable in $\beta_i$, and so is $\| \beta \|_2^2$ as it can be written as
-$\sum_{i=1}^n \beta_i^2$. \\
-Furthermore, both terms are convex in $\beta$ as $[1 - y_i (\beta^\top x_i + \beta_0)]_+$ is by definition the poitnwise maximum of two convex functions. \\
+The problem is now in the desired ``loss + penalty'' form. The term $\sum_{i=1}^n [1 - y_i (\beta^\top x_i + \beta_0)]_+$  is seperable in $x_1, \ldots, x_m$. 
+Furthermore, both terms are convex in $\beta$ as $[1 - y_i (\beta^\top x_i + \beta_0)]_+$ is the pointwise maximum of two convex functions. \\
 
-Thus subsituting $z = \beta$ as before, 
+Thus substituting $z = \beta$, 
+
 \begin{equation} 
 \begin{aligned}
 \argmin_{\beta, \beta_0} \quad 
 &  \sum_{i=1}^n [1 - y_i (\beta^\top x_i + \beta_0)]_+ \frac{1}{2C} \|\beta\|_2^2 \\
-\textrm{subj. to} \quad & x_i - z_i = 0 \quad \forall i = 1, \ldots, N
+\textrm{subj. to} \quad & x_i - z_i = 0 \quad \forall i = 1, \ldots, m
 \end{aligned}
 \end{equation}
-this problem can be solved using the scaled global
-variable consensus ADMM algorithm described section 2 \cite{boydistributed}:
 
-\begin{equation*}
-\begin{aligned}
-    (\beta_i)_{k+1} & \leftarrow \argmin_{\beta_i} \left(\mathbf{1}^\top(\beta_i^\top x_i + \mathbf{1})_+ + (\rho/2) \|\beta_i - z_k + (u_i)_k \|_2^2 \right) \\
-    z_{k+1} & \leftarrow  \argmin_z \left( \frac{1}{2C} \|z\|_2^2 + \frac{N \rho}{2} \|z\|_2^2  - \overline{\beta}_{k+1} - \overline{u}_k\right) \\
-    (u_i)_{k+1} & \leftarrow (u_i)_k + (\beta_i)_k - z_{k+1}
-\end{aligned}
-\end{equation*}
+This problem can be solved using the scaled global variable consensus ADMM algorithm described section 2,
+where $X_i = \begin{bmatrix} x_{i1} & \ldots & x_{im_i} \end{bmatrix}^\top \in \R^{m_i \times p}$ : \\
+
+\begin{algorithm}[H]
+    \caption{Naive global variable consensus ADMM for SVC}
+
+    \SetAlgoNoLine
+
+    \For{$k=1,2, \ldots$}{
+    $ \displaystyle
+        (\beta_i)_{k+1}  \leftarrow \argmin_{\beta_i} \left(
+            \sum_{j=1}^{m_i} [1 - y_{ij} (\beta_i^\top x_{ij} + \beta_0)]_+ + (\rho/2) \|\beta_i - z_k + (u_i)_k \|_2^2 
+        \right) 
+    $
+
+    $ \displaystyle
+        z_{k+1}  \leftarrow  \argmin_z \left( 
+            \frac{1}{2C} \|z\|_2^2 + \frac{N \rho}{2} \|z\|_2^2  - \overline{\beta}_{k+1} - \overline{u}_k
+        \right) 
+    $
+
+    $ \displaystyle
+        (u_i)_{k+1}  \leftarrow (u_i)_k + (\beta_i)_k - z_{k+1}
+    $
+    }
+\end{algorithm}
 
 This can be simplified further by solving the $z$-update analytically. Rewrite the right-hand 
 side as 
@@ -128,27 +223,37 @@ Then, solve
     z &= \frac{N \rho}{1/C + N\rho} \left( \overline{\beta}_{k+1} + \overline{u}_k \right)
 \end{align*}
 
-This yields the final form of the ADMM algorithm for this problem,
+This yields the final form of the ADMM algorithm for this problem, \\
 
-\begin{equation*}
-\begin{aligned}
-    (\beta_i)_{k+1} 
-    & \leftarrow \argmin_{\beta_i} \left(\mathbf{1}^\top(\beta_i^\top x_i + \mathbf{1})_+ + (\rho/2) \|\beta_i - z_k + (u_i)_k \|_2^2 \right) \\
-    z_{k+1} 
-    & \leftarrow \frac{N\rho}{1/C + N\rho} (\overline{\beta}_{k+1} + \overline{u}_k) \\
-    (u_i)_{k+1} 
-     & \leftarrow (u_i)_k + (\beta_i)_{k+1} - z_{k+1}
-\end{aligned}
-\end{equation*}
+\begin{algorithm}[H]
+    \caption{Global variable consensus ADMM for SVC}
+
+    \SetAlgoNoLine
+
+    \For{$k=1,2, \ldots$}{
+    $ \displaystyle
+        (\beta_i)_{k+1}  \leftarrow \argmin_{\beta_i} \left(
+            \sum_{j=1}^{m_i} [1 - y_{ij} (\beta_i^\top x_{ij} + \beta_0)]_+ + (\rho/2) \|\beta_i - z_k + (u_i)_k \|_2^2 
+        \right) 
+    $
+    $ \displaystyle
+        z_{k+1}  \leftarrow \frac{N\rho}{1/C + N\rho} (\overline{\beta}_{k+1} + \overline{u}_k) 
+    $
+
+    $ \displaystyle
+        (u_i)_{k+1}  \leftarrow (u_i)_k + (\beta_i)_k - z_{k+1}
+    $
+    }
+\end{algorithm}
 
 
-As in the general case, the $u_i$- and $x_i$-updates can be performed in parallel.
 
-
-\textbf{NOTE:} Add something on how this fits many support vector machines
-
-Note that we split the updates over individual training examples, but we could with very slight 
-modification split over ``blocks'' of training example. 
+As in the general case, the $u_i$- and $\beta_i$-updates can be executed in parallel. Notice 
+that the minimization problem in the $\beta_i$ subproblems step resembles formulation (\ref{third_formulation}) of the SVC. Indeed, one can treat this this as a modified SVM problem and 
+use existing single-process solvers \cite{boydistributed}. \\
+This pattern of subproblems having the same form as the original problem appears frequently in 
+applications of ADMM. In this sense, ADMM can be used to scale in a straightforward manner simple 
+solvers to large-scale problems.
 
 \bibliographystyle{ieeetr}
 \bibliography{am229_final_paper}

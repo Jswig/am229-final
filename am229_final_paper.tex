@@ -14,8 +14,20 @@
 
 \maketitle 
 
-\section{The ADMM Algorithm}
+\section{Alternating Descent Method of Multipliers}
 
+\subsection{Motivation}
+
+The \emph{Alternating Descent Method of Multipliers} (ADMM) algorithm is motivated by a 
+desire to combine the best properties of two simpler algorithms while overcoming 
+their respective limitations \cite{boydistributed}. \\
+On one hand, the \emph{dual descent} algorithm has subproblems that can be easily distributed. 
+However, this comes at the cost of strong assumptions on the form of the problem. 
+On the other hand, the \emph{method of multipliers} (MM) modifies dual ascent to relax the required assumptions, but this sacrifies the ability to distribute parts of the algorithm. 
+
+\subsection{Algorithm}
+
+The ADMM algorithm is used solves problems of the form
 \begin{equation} \label{admmform}
 \begin{aligned}
     \min_{x, z} \quad & f(x) + g(z) \\
@@ -24,22 +36,113 @@
 \end{equation}
 where $x \in \R^m, z \in \R^n, A \in R^{m \times p}, B \in \R^{n \times p}, c \in \R^p$
 
-\subsection*{}
+Like MM, the ADMM algorithm actually solves an equivalent augmented problem 
+\begin{equation} \label{admm_aug_form}
+    \begin{aligned}
+        \min_{x, z} \quad & f(x) + g(z) + \frac{\rho}{2} \|Ax + Bz - c\|_2^2\\
+        \textrm{subj. to } \quad & Ax + Bz = c
+    \end{aligned}
+    \end{equation}
+Indeed, any satisfiable pair $x,z$ zeroes out the extra term in the objective, 
+recovering problem (\ref{admmform}). \\
+The associated augmented Lagrangian is
+\[
+    L_{\rho}(x,z,\nu) =  f(x) + g(z) + \nu^\top(Ax+Bz+c) + \frac{\rho}{2} \|Ax + Bz - c\|_2^2
+\]
+The algorithm is given by  \\
 
-\section{Parallelizing ADMM}
+\begin{algorithm}[H]
+    \caption{ADMM}
+
+    \SetAlgoNoLine
+
+    \For{$k=1,2, \ldots$}{
+    $ \displaystyle 
+        x_{k+1} \leftarrow \argmin_x  L_{\rho}(x,z_k,\nu_k)
+    $
+    $ \displaystyle 
+    x_{k+1} \leftarrow \argmin_z  L_{\rho}(x_{k+1},z,\nu_k)
+    $
+    $ \displaystyle 
+    \nu_{k+1} \leftarrow \nu_k + \rho(Ax_{k+1} + Bz_{k+1} - c)
+    $
+    }
+\end{algorithm}
+
+\subsection{Properties of ADMM}
+
+
+\section{Distributed ADMM}
 
 \subsection*{Global variable consensus ADMM}
 
-The motivation for using ADMM becomes clear when the objective of the minimization problem is 
-\textit{seperable}, i.e. when it is of the form 
-\[
-    \min \quad \sum_{i=1}^N f_i(x)  
-\]
+The power of the ADMM becomes clear when the objective of the minimization problem is 
+\textit{additive}, i.e. when it is of the form 
+
+\begin{equation} \label{additive}
+    \min \quad \sum_{i=1}^N f_i(x)
+\end{equation}
+    
 where each of the $f_i$ are convex. In this situation, one can derive a version of the ADMM 
-algorithm that can be distributed, which can yield a sizeable improvement in performance.
+algorithm that can be distributed, which can yield a sizeable improvement in performance. 
+To obtain a distributed algorithm, the objective function should be \emph{seperable} \\
 
+Now, to transform an addditive objective into a seperable objective, the problem 
+can be rewritten as a \emph{global consensus problem} with 
+``local variables'' which are all constrained to be equal to the original
+variable $x$ \cite{nedic201010}, 
 
-\subsection*{Regularized Model Estimation}
+\begin{equation}
+\begin{aligned}
+    \min \quad & \sum_{i=1}^N f_i(x_i) \\
+    \textrm{subj. to } \quad & x_i = z \quad \forall i = 1, \ldots, n
+\end{aligned}
+\end{equation}
+
+In many situations, the objective has an extra term in $x$, which is rewritten in 
+terms of $z$ 
+
+\begin{equation} \label{gen_seperable}
+\begin{aligned}
+        \min \quad & \sum_{i=1}^N f_i(x_i) + g(z)\\
+        \textrm{subj. to } \quad & x_i = z \quad \forall i = 1, \ldots, n
+\end{aligned}
+\end{equation}
+
+The augmented Lagrangian is then 
+\[ 
+    L_\rho(x_1, \ldots, x_N, z, \nu) = 
+    g(z) + \sum_{i=1}^N \left( f_i(x_i) + \nu_i^\top(x_i - z) + \frac{\rho}{2} \|x_i - z\|_2^2 \right)
+\]
+which yields the following ADMM algorithm after simplifying the z-update step \cite{boydistributed}:
+
+\begin{algorithm}[H]
+    \caption{Global variable consensus ADMM}
+
+    \SetAlgoNoLine
+
+    \For{$k=1,2, \ldots$}{
+    $ \displaystyle
+        (x_i)_{k+1}  \leftarrow \argmin_{x_i} \left(
+            f_i(x_i) + (\nu_i)_k^\top (x_i - z) + \frac{\rho}{2} \|x_i -z_k \|_2^2
+        \right) 
+    $
+    $ \displaystyle
+        z_{k+1}  \leftarrow  \argmin_z \left( 
+            g(z) + \frac{N\rho}{2} \|z - \overline{x}_{k+1} - (1/ \rho) \overline{\nu}_k\|_2^2
+        \right) 
+    $
+    $ \displaystyle
+        (\nu_i)_{k+1} \leftarrow (\nu_i)_k  + \rho(  (\beta_i)_k - z_{k+1})
+    $
+    }
+\end{algorithm}
+\vspace{5pt}
+This algorithm performs $N$ distinct $x_i$ and $\nu_i$-updates at each step, each of which is 
+done in parallel as they are independant of one-another. The $z$-update is handled by a central 
+process, and coordinates the solutions of the subproblems solved in the $x, \nu$ updates.
+
+\subsection{Regularized Model Estimation}
 
 The ADMM form (\ref{admmform}) is particularly natural for regularized model estimation problems, 
 where the objective can be written as the sum of a ``loss'' and a ``penalty'' term, i.e.
@@ -48,7 +151,7 @@ where the objective can be written as the sum of a ``loss'' and a ``penalty'' te
 \]
 where $X \in \R^{m \times p}$ is a matrix of training examples, $y \in \R^m$ is the vector of training
 labels, and $\beta$ is a vector of model parameters. If the loss function $l$ and regularization function 
-$r$ are respectively convex, the substitution $\beta = z$ immediately yields a problem in form (\ref{admmform})
+$r$ are respectively convex, the substitution $\beta = z$ immediately yields a problem in desired form (\ref{admmform})
 
 \begin{equation}
 \begin{aligned}
@@ -65,10 +168,13 @@ the problem over blocks of data \cite{boydistributed}, such that
 \]
 where $X_i \in \R^{m_i \times p}$, $y \in \R^{m_i}$, $\sum_{i=1}^n m_i = m$, and $l_i$ is 
 the loss functions on the $i^{th}$ block of data.
-The algorithm is then 
+The algorithm is then, following the result for problems of the form (\ref{gen_seperable}) \\
+and using uses the more compact scaled form described in \cite{boydistributed},\\
 
-\begin{algorithm}
+\begin{algorithm}[H]
     \caption{Consensus global variable ADMM for regularizated model estimation}
+
+    \SetAlgoNoLine
 
     \For{$k=1,2, \ldots$}{
         $ \displaystyle
@@ -86,7 +192,7 @@ The algorithm is then
         $
         }
 \end{algorithm}
-
+\vspace{5pt}
 The next section demonstrates a worked out example of a straighforward application of this algorithm.
 
 \section{Support Vector Classifiers}
@@ -184,8 +290,8 @@ Thus substituting $z = \beta$,
 \end{aligned}
 \end{equation}
 
-This problem can be solved using the scaled global variable consensus ADMM algorithm described section 2,
-where $X_i = \begin{bmatrix} x_{i1} & \ldots & x_{im_i} \end{bmatrix}^\top \in \R^{m_i \times p}$ : \\
+This problem can be solved using the global variable consensus ADMM algorithm, 
+where $X_i = \begin{bmatrix} x_{i1} & \ldots & x_{im_i} \end{bmatrix}^\top \in \R^{m_i \times p}$ \\
 
 \begin{algorithm}[H]
     \caption{Naive global variable consensus ADMM for SVC}
@@ -198,19 +304,17 @@ where $X_i = \begin{bmatrix} x_{i1} & \ldots & x_{im_i} \end{bmatrix}^\top \in \
             \sum_{j=1}^{m_i} [1 - y_{ij} (\beta_i^\top x_{ij} + \beta_0)]_+ + (\rho/2) \|\beta_i - z_k + (u_i)_k \|_2^2 
         \right) 
     $
-
     $ \displaystyle
         z_{k+1}  \leftarrow  \argmin_z \left( 
             \frac{1}{2C} \|z\|_2^2 + \frac{N \rho}{2} \|z\|_2^2  - \overline{\beta}_{k+1} - \overline{u}_k
         \right) 
     $
-
     $ \displaystyle
         (u_i)_{k+1}  \leftarrow (u_i)_k + (\beta_i)_k - z_{k+1}
     $
     }
 \end{algorithm}
-
+\vspace{5pt}
 This can be simplified further by solving the $z$-update analytically. Rewrite the right-hand 
 side as 
 \[
@@ -239,21 +343,17 @@ This yields the final form of the ADMM algorithm for this problem, \\
     $ \displaystyle
         z_{k+1}  \leftarrow \frac{N\rho}{1/C + N\rho} (\overline{\beta}_{k+1} + \overline{u}_k) 
     $
-
     $ \displaystyle
         (u_i)_{k+1}  \leftarrow (u_i)_k + (\beta_i)_k - z_{k+1}
     $
     }
 \end{algorithm}
-
-
-
-As in the general case, the $u_i$- and $\beta_i$-updates can be executed in parallel. Notice 
+\vspace{5pt}
+As in the general case, the $u_i$- and $\beta_i$-updates are parallelizable. Notice 
 that the minimization problem in the $\beta_i$ subproblems step resembles formulation (\ref{third_formulation}) of the SVC. Indeed, one can treat this this as a modified SVM problem and 
 use existing single-process solvers \cite{boydistributed}. \\
 This pattern of subproblems having the same form as the original problem appears frequently in 
-applications of ADMM. In this sense, ADMM can be used to scale in a straightforward manner simple 
-solvers to large-scale problems.
+applications of ADMM. In this sense, ADMM is often be used to adapt nonparallel to large-scale problems \cite{boydistributed}.
 
 \bibliographystyle{ieeetr}
 \bibliography{am229_final_paper}

@@ -1,0 +1,132 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath}
+\usepackage[ruled]{algorithm2e}
+\usepackage{mathpb}
+
+\author{Anders Poirel, \\ University of California, Santa Cruz}
+\date{\today}
+\title{
+    Distributed Support Vector Machines via the Alternating Direction Method of Multipliers
+}
+
+\begin{document}
+
+\maketitle 
+
+\section{The ADMM Algorithm}
+
+\section{Parallelizing ADMM}
+
+\section{Support Vector Classifiers}
+
+
+\subsection{Problem formulation}
+
+Letting $x_1, \ldots x_n \in \R^n$ be the training examples, and $y_1, \ldots, y_n \in \{-1,1\}$ be the training labels, 
+the standard form of the binary support vector classifer (SVC) problem is given in   \cite{hastie2009elements} by
+
+\begin{equation} \label{first_form}
+\begin{aligned}
+    \argmin_{\beta, \beta_0, \xi}  \quad 
+    & \|\beta\|^2_2 & \\
+    \textrm{subj. to} \quad 
+    & y_i (x_i^\top \beta + \beta_0) \geq 1 - \xi & \forall i = 1, \ldots, N \\
+    & \xi_i \geq 0  & \forall i = 1, \ldots, N \\
+    & \sum_{i=1}^N \xi_i \leq C & C \textrm{ constant}
+\end{aligned}
+\end{equation}
+
+Equivalently, we can formulate this as 
+
+\begin{equation} \label{second_form}
+\begin{aligned}
+    \argmin_{\beta, \beta_0, \xi} \quad 
+    & \frac{1}{2} \| \beta  \|_2^2 +  C \sum_{i=1}^N \xi_i & \\ 
+    \textrm{subj. to}  \quad 
+    & y_i (x_i^\top \beta + \beta_0) \geq 1 - \xi_i & \forall i = 1, \ldots, N \\
+    & \xi_i \geq 0  & \forall i = 1, \ldots, N 
+\end{aligned}
+\end{equation}
+
+Indeed, this minimum is only defined when $\sum \xi_i$ is finite. 
+
+
+\subsection{Motivation}
+
+This is for instance useful in problems where the number of training examples
+$N$ dominates the dimensionality of the data $p$, 
+While standard solvers for linear support vector classifers scale easily to millions of training examples \cite{fan2008liblinear}
+the standard \texttt{libSVM} solvers for nonlinear kernels struggles on problems of this 
+scale when the data is non-sparse \cite{chang2011libsvm}. \\
+
+The approach presented here uses the alternating descent method of multipliers to derive 
+a parallelizable algorithm for fitting support vector machines. While only the case for linear 
+kernels is shown here due to space constraints, extending this technique to non-linear kernels 
+is straightforward \cite{forero2010consensus}.
+
+
+\subsection{Derivation of a parallel algorithm for SVC}
+
+We first rewrite the SVC formulation (\ref{second_form}) in a more convenient form to apply the ADMM algorithm.
+\begin{equation*} 
+\begin{aligned}
+    \argmin_{\beta, \beta_0, \xi} \quad &   \frac{1}{2} \|\beta\|_2^2 + C\sum_{i=1}^N \xi_i\\
+    \textrm{subj. to } \quad & \xi_i =  [1 - y_i (\beta^\top x_i + \beta_0)]_+
+\end{aligned}
+\end{equation*}
+where  $[1 - y_i (\beta^\top x_i + \beta_0)]_+ = \max(0, 1 - y_i (\beta^\top x_i + \beta_0))$ . This is then equivalent to
+\begin{equation*} 
+\begin{aligned}
+        \argmin_{\beta, \beta_0, \xi} \quad & \frac{1}{2C} \|\beta\|_2^2 + \sum_{i=1}^N \xi_i\\
+        \textrm{subj. to } \quad & \xi_i =  [1 - y_i (\beta^\top x_i + \beta_0)]_+
+\end{aligned}
+\end{equation*}
+Now, minimizing over $\xi$, this problem is now equivalent to
+\begin{equation} \label{third_formulation}
+\begin{aligned}
+        \argmin_{\beta, \beta_0} \quad 
+        &  \sum_{i=1}^n [1 - y_i (\beta^\top x_i + \beta_0)]_+ \frac{1}{2C} \|\beta\|_2^2 
+\end{aligned}
+\end{equation}
+Indeed, to minimize $\sum \xi_i$ it suffices to take the smallest $\xi_i$ allowed by the constraints,
+that is $[1 - y_i (\beta^\top x_i + \beta_0)]_+$. This corresponds to the penalization method
+formulation of the SVC given in \cite{hastie2009elements}. \\
+
+The problem is now in the desired ``loss + penalty'' form. The term $\sum_{i=1}^n [1 - y_i (\beta^\top x_i + \beta_0)]_+$  is seperable in $\beta_i$, and so is $\| \beta \|_2^2$ as it can be written as
+$\sum_{i=1}^n \beta_i^2$. \\
+Furthermore, both terms are convex in $\beta$ as $[1 - y_i (\beta^\top x_i + \beta_0)]_+$ is by definition the poitnwise maximum of two convex functions. \\
+
+Thus subsituting $z = \beta$ as usual, 
+\begin{equation} 
+\begin{aligned}
+\argmin_{\beta, \beta_0} \quad 
+&  \sum_{i=1}^n [1 - y_i (\beta^\top x_i + \beta_0)]_+ \frac{1}{2C} \|\beta\|_2^2 \\
+\textrm{subj. to} \quad & x_i - z_i = 0 \quad \forall i = 1, \ldots, N
+\end{aligned}
+\end{equation}
+this problem can be solved using the  global
+variable consensus ADMM algorithm described in INSERT REFERENCE:
+
+\begin{equation*}
+\begin{aligned}
+    (x_i)_{k+1} & \leftarrow \argmin_{x_i}
+\end{aligned}
+\end{equation*}
+
+\begin{equation*}
+\begin{aligned}
+    (\beta_i)_{k+1} 
+    & \leftarrow \argmin_{\beta_i} (\mathbf{1}^\top(x_i\beta_i + \mathbf{1})_+ + (\rho/2) \|\beta_i - z_k + (u_i)_k \|_2^2) \\
+    z_{k+1} 
+    & \leftarrow \frac{\rho}{(1/\lambda) + N\rho} (\overline{\beta_{k+1}} + \overline{u_k}) \\
+    u_{k+1} 
+     & \leftarrow (u_i)_k + (\beta_i)_{k+1} - z_{k+1}
+\end{aligned}
+\end{equation*}
+As in the general case, the $x_i$-updates can be performed in parallel.
+
+\bibliographystyle{ieeetr}
+\bibliography{am229_final_paper}
+
+\end{document}

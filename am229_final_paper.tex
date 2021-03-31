@@ -4,7 +4,7 @@
 \usepackage[ruled]{algorithm2e}
 \usepackage{mathpb}
 
-\author{Anders Poirel, \\ University of California, Santa Cruz}
+\author{Anders Poirel, \\ AM 229, Fall 2020}
 \date{\today}
 \title{
     Distributed Support Vector Machines via the Alternating Direction Method of Multipliers
@@ -27,7 +27,7 @@ On the other hand, the \emph{method of multipliers} (MM) modifies dual ascent to
 
 \subsection{Algorithm}
 
-The ADMM algorithm is used solves problems of the form
+The ADMM algorithm solves problems of the form
 \begin{equation} \label{admmform}
 \begin{aligned}
     \min_{x, z} \quad & f(x) + g(z) \\
@@ -36,7 +36,7 @@ The ADMM algorithm is used solves problems of the form
 \end{equation}
 where $x \in \R^m, z \in \R^n, A \in R^{m \times p}, B \in \R^{n \times p}, c \in \R^p$
 
-Like MM, the ADMM algorithm actually solves an equivalent augmented problem 
+Like MM, the ADMM algorithm in practice solves an equivalent augmented problem 
 \begin{equation} \label{admm_aug_form}
     \begin{aligned}
         \min_{x, z} \quad & f(x) + g(z) + \frac{\rho}{2} \|Ax + Bz - c\|_2^2\\
@@ -49,6 +49,7 @@ The associated augmented Lagrangian is
 \[
     L_{\rho}(x,z,\nu) =  f(x) + g(z) + \nu^\top(Ax+Bz+c) + \frac{\rho}{2} \|Ax + Bz - c\|_2^2
 \]
+
 The algorithm is given by  \\
 
 \begin{algorithm}[H]
@@ -57,21 +58,68 @@ The algorithm is given by  \\
     \SetAlgoNoLine
 
     \For{$k=1,2, \ldots$}{
-    $ \displaystyle 
-        x_{k+1} \leftarrow \argmin_x  L_{\rho}(x,z_k,\nu_k)
-    $
-    $ \displaystyle 
-    x_{k+1} \leftarrow \argmin_z  L_{\rho}(x_{k+1},z,\nu_k)
-    $
-    $ \displaystyle 
-    \nu_{k+1} \leftarrow \nu_k + \rho(Ax_{k+1} + Bz_{k+1} - c)
-    $
+        $ \displaystyle 
+            x_{k+1} \leftarrow \argmin_x  L_{\rho}(x,z_k,\nu_k)
+        $
+        
+        $ \displaystyle 
+        x_{k+1} \leftarrow \argmin_z  L_{\rho}(x_{k+1},z,\nu_k)
+        $
+
+        $ \displaystyle 
+        \nu_{k+1} \leftarrow \nu_k + \rho(Ax_{k+1} + Bz_{k+1} - c)
+        $
     }
 \end{algorithm}
 
 \subsection{Properties of ADMM}
 
+\quad \textbf{Convergence}\\
+A major advantage of ADMM is that it converges in many common scenario
+where dual ascent does not. For instance, dual ascent does not converge if the objective is 
+linear \cite{boydistributed}. In fact if the problem satisfies the following 
+assumptions
+\begin{itemize}
+    \item[(1)] $\rm{epi}(f)$ and $\rm{epi}(g)$ are closed, nonempty convex sets 
+    \item[(2)] The Lagrangian of problem formulation (\ref{admmform}) has a saddle point  
+\end{itemize}
+Then 
+that is, the points approach feasability and the objective approaches its optimum
 
+\begin{equation*}
+\begin{aligned}
+    Ax_k + Bz_k &\rightarrow 0 \text{ as } k \rightarrow \infty \\
+    f(x_k) + g(z_k) &\rightarrow p^* \text{ as } k \rightarrow \infty
+\end{aligned}
+\end{equation*}
+
+These assumptions hold in many applications, including the example
+discussed in a later section  \cite{boydistributed}. \\
+
+\textbf{Seperability}
+
+The function $f$ is \emph{seperable} if
+\[
+    f(x) = \sum_{i=1}^n f+i(x_i)  
+\]
+where $x = (x_1, \ldots, x_n)$ and $x_i$ are subvectors of $x$. If either $f$ or $g$ 
+in the ADMM problem (\ref{admmform}) are seperable, then the $x$ and $z$- minimization 
+steps in the algorithm can  be decomposed into independant problems \cite{boydistributed}, which allows 
+the algorithm to conduct these updates in parallel, yielding distributed solvers 
+for many problems.
+% For instance, if $f$ is seperable, letting $A = [A_1 \cdots A_n]$ the $x$-minization step becomes 
+% \[
+%     x_{k+1} \leftarrow \argmin_x  \left( 
+%         \sum_{i=1}^N  \left[ f_i(x_i) +\nu^\top A_ix_i \right] + g(z) + \nu^\top(Bz+c) + \frac{\rho}{2} \|Ax + Bz - c\|_2^2 
+%         \right)
+% \]
+% which is equivalent to, for $i = 1, \ldots, N$
+% \[
+%     (x_i)_{k+1} \leftarrow \argmin_{x_i} f_i(x_i) + \nu^\top A_ix_i  + \frac{1}{N} 
+% \]
+% (this can be show by minimizing over components of $x$ except $x_i$)
+% We can carry out the $x_i$
+ 
 \section{Distributed ADMM}
 
 \subsection*{Global variable consensus ADMM}
@@ -112,7 +160,7 @@ terms of $z$
 The augmented Lagrangian is then 
 \[ 
     L_\rho(x_1, \ldots, x_N, z, \nu) = 
-    g(z) + \sum_{i=1}^N \left( f_i(x_i) + \nu_i^\top(x_i - z) + \frac{\rho}{2} \|x_i - z\|_2^2 \right)
+    g(z) + \sum_{i=1}^N \left( f_i(x_i) + (\nu_i)_k^\top(x_i - z) + \frac{\rho}{2} \|x_i - z\|_2^2 \right)
 \]
 which yields the following ADMM algorithm after simplifying the z-update step \cite{boydistributed}:
 
@@ -122,24 +170,26 @@ which yields the following ADMM algorithm after simplifying the z-update step \c
     \SetAlgoNoLine
 
     \For{$k=1,2, \ldots$}{
-    $ \displaystyle
-        (x_i)_{k+1}  \leftarrow \argmin_{x_i} \left(
-            f_i(x_i) + (\nu_i)_k^\top (x_i - z) + \frac{\rho}{2} \|x_i -z_k \|_2^2
-        \right) 
-    $
-    $ \displaystyle
-        z_{k+1}  \leftarrow  \argmin_z \left( 
-            g(z) + \frac{N\rho}{2} \|z - \overline{x}_{k+1} - (1/ \rho) \overline{\nu}_k\|_2^2
-        \right) 
-    $
-    $ \displaystyle
-        (\nu_i)_{k+1} \leftarrow (\nu_i)_k  + \rho(  (\beta_i)_k - z_{k+1})
-    $
+        $ \displaystyle
+            (x_i)_{k+1}  \leftarrow \argmin_{x_i} \left(
+                f_i(x_i) + (\nu_i)_k^\top (x_i - z_k) + \frac{\rho}{2} \|x_i -z_k \|_2^2
+            \right) 
+        $
+
+        $ \displaystyle
+            z_{k+1}  \leftarrow  \argmin_z \left( 
+                g(z) + \frac{N\rho}{2} \|z - \overline{x}_{k+1} - (1/ \rho) \overline{\nu}_k\|_2^2
+            \right) 
+        $
+
+        $ \displaystyle
+            (\nu_i)_{k+1} \leftarrow (\nu_i)_k  + \rho(  (\beta_i)_k - z_{k+1})
+        $
     }
 \end{algorithm}
 \vspace{5pt}
 This algorithm performs $N$ distinct $x_i$ and $\nu_i$-updates at each step, each of which is 
-done in parallel as they are independant of one-another. The $z$-update is handled by a central 
+can be done in parallel as they are independant of one-another. The $z$-update is handled by a central 
 process, and coordinates the solutions of the subproblems solved in the $x, \nu$ updates.
 
 \subsection{Regularized Model Estimation}
@@ -168,7 +218,7 @@ the problem over blocks of data \cite{boydistributed}, such that
 \]
 where $X_i \in \R^{m_i \times p}$, $y \in \R^{m_i}$, $\sum_{i=1}^n m_i = m$, and $l_i$ is 
 the loss functions on the $i^{th}$ block of data.
-The algorithm is then, following the result for problems of the form (\ref{gen_seperable}) \\
+The algorithm is then, following the result for problems of the form (\ref{gen_seperable})
 and using uses the more compact scaled form described in \cite{boydistributed},\\
 
 \begin{algorithm}[H]
@@ -353,7 +403,8 @@ As in the general case, the $u_i$- and $\beta_i$-updates are parallelizable. Not
 that the minimization problem in the $\beta_i$ subproblems step resembles formulation (\ref{third_formulation}) of the SVC. Indeed, one can treat this this as a modified SVM problem and 
 use existing single-process solvers \cite{boydistributed}. \\
 This pattern of subproblems having the same form as the original problem appears frequently in 
-applications of ADMM. In this sense, ADMM is often be used to adapt nonparallel to large-scale problems \cite{boydistributed}.
+applications of ADMM. In this sense, ADMM can be seen as a technique to extend nonparallel 
+methods to large-scale problems \cite{boydistributed}.
 
 \bibliographystyle{ieeetr}
 \bibliography{am229_final_paper}
